@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="uz">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tender Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      html {
+        font-size: 65.625%; /* Scaled down by 25% from 87.5% */
+      }
+      /* Light Green Accent Theme (Default) */
+      :root, .theme-light {
+        --color-primary-default: 16 185 129;  /* emerald-500 */
+        --color-primary-light: 249 250 251; /* gray-50 */
+        --color-primary-dark: 5 150 105;    /* emerald-600 */
+        --color-accent-default: 229 231 235; /* gray-200 */
+        --color-text-dark: 17 24 39;      /* gray-900 */
+        --color-text-light: 107 114 128;   /* gray-500 */
+        --color-text-inverted: 249 250 251;  /* WHITE for text on green buttons */
+        --glass-bg: rgba(255, 255, 255, 0.65);
+        --glass-border: rgba(255, 255, 255, 0.2);
+        --surface-bg: rgba(249, 250, 251, 0.95); /* gray-50 */
+        --secondary-bg: rgba(243, 244, 246, 0.85); /* gray-100 */
+        --border-color: 229 231 235; /* gray-200 */
+      }
+      /* Dark Green Accent Theme */
+      .theme-dark {
+        --color-primary-default: 16 185 129;   /* emerald-500 */
+        --color-primary-light: 55 65 81;     /* gray-700 */
+        --color-primary-dark: 5 150 105;    /* emerald-600 */
+        --color-accent-default: 31 41 55;     /* gray-800 */
+        --color-text-dark: 243 244 246;   /* gray-100 */
+        --color-text-light: 156 163 175;  /* gray-400 */
+        --color-text-inverted: 249 250 251;    /* WHITE for text on green buttons */
+        --glass-bg: rgba(31, 41, 55, 0.5);
+        --glass-border: rgba(255, 255, 255, 0.1);
+        --surface-bg: rgba(31, 41, 55, 0.7); /* gray-800 */
+        --secondary-bg: rgba(17, 24, 39, 0.6); /* gray-900 */
+        --border-color: 55 65 81; /* gray-700 */
+      }
+
+      @keyframes gradient-animation {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+      }
+
+      body::before {
+        content: '';
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        z-index: -1;
+        background: linear-gradient(60deg, rgb(var(--color-primary-light)), rgb(var(--color-accent-default)));
+        background-size: 300% 300%;
+        animation: gradient-animation 18s ease infinite;
+      }
+      
+      .glass-card {
+        border: 1px solid transparent;
+        background: 
+          linear-gradient(var(--glass-bg), var(--glass-bg)) padding-box,
+          linear-gradient(60deg, rgb(var(--color-primary-light)), rgb(var(--color-accent-default))) border-box;
+        background-size: 300% 300%;
+        animation: gradient-animation 18s ease infinite;
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.15);
+      }
+    </style>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              primary: {
+                DEFAULT: 'rgb(var(--color-primary-default) / <alpha-value>)',
+                light: 'rgb(var(--color-primary-light) / <alpha-value>)',
+                dark: 'rgb(var(--color-primary-dark) / <alpha-value>)',
+              },
+              accent: {
+                DEFAULT: 'rgb(var(--color-accent-default) / <alpha-value>)',
+              },
+              surface: 'var(--surface-bg)',
+              secondary: 'var(--secondary-bg)',
+              textDark: 'rgb(var(--color-text-dark) / <alpha-value>)',
+              textLight: 'rgb(var(--color-text-light) / <alpha-value>)',
+              textInverted: 'rgb(var(--color-text-inverted) / <alpha-value>)',
+              border: 'rgb(var(--border-color) / <alpha-value>)',
+            },
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+            },
+            animation: {
+              'fade-in': 'fadeIn 0.5s ease-out forwards',
+            },
+            keyframes: {
+              fadeIn: {
+                '0%': { opacity: '0', transform: 'translateY(-10px)' },
+                '100%': { opacity: '1', transform: 'translateY(0)' },
+              }
+            }
+          },
+        },
+      }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.21.0",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "framer-motion": "https://aistudiocdn.com/framer-motion@^11.3.19",
+    "recharts": "https://aistudiocdn.com/recharts@^2.13.0",
+    "xlsx": "https://aistudiocdn.com/xlsx@^0.18.5",
+    "jspdf": "https://aistudiocdn.com/jspdf@^2.5.1",
+    "jspdf-autotable": "https://aistudiocdn.com/jspdf-autotable@^3.8.2",
+    "date-fns": "https://aistudiocdn.com/date-fns@^3.6.0",
+    "zustand": "https://aistudiocdn.com/zustand@^4.5.4",
+    "zustand/": "https://aistudiocdn.com/zustand@^4.5.4/",
+    "react-hot-toast": "https://aistudiocdn.com/react-hot-toast@^2.4.2",
+    "fuse.js": "https://aistudiocdn.com/fuse.js@^7.0.0",
+    "compromise": "https://aistudiocdn.com/compromise@^14.13.0"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body class="font-sans text-textDark font-medium">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
