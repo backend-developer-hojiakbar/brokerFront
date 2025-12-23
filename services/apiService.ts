@@ -1,7 +1,7 @@
 import type { User, Analysis, TenderData, Product, Expense } from '../types';
 
 // API base URL - update this to match your backend server
-const API_BASE_URL = 'https://brokerapibro.pythonanywhere.com';
+const API_BASE_URL = 'http://127.0.0.1:8000';
 
 // Auth token storage
 let authToken: string | null = null;

@@ -213,10 +213,14 @@ export const TenderWorkspace: React.FC<TenderWorkspaceProps> = ({
       if (searchType === 'text') {
         // First try our new product price API with detailed product information
         try {
+          console.log('🔍 Initiating price search for product:', product.name);
           const priceResponse = await productPriceApi.getPrice(product);
+          console.log('📥 API Response received for', product.name, ':', JSON.stringify(priceResponse, null, 2));
           
           if (priceResponse.success && priceResponse.best_price) {
-            const bestPrice = priceResponse.best_price;
+            // Handle the new response format with multilingual support
+            const bestPrice = priceResponse.best_price_overall || priceResponse.best_price;
+            console.log('🏆 Selected best price:', bestPrice);
             
             // Update the product with the found price
             products[productIndex] = { 
@@ -234,8 +238,8 @@ export const TenderWorkspace: React.FC<TenderWorkspaceProps> = ({
             };
             
             // Log the update for debugging
-            console.log('Updating product with price:', bestPrice.price, 'for product:', product.name);
-            console.log('Full bestPrice object:', bestPrice);
+            console.log('✅ Updating product with price:', bestPrice.price, 'for product:', product.name);
+            console.log('📋 Full bestPrice object:', bestPrice);
             
             onUpdateAnalysis(viewingAnalysis.id, { 
               data: updatedData
@@ -243,18 +247,74 @@ export const TenderWorkspace: React.FC<TenderWorkspaceProps> = ({
             
             toast.success(t('tenderDetails.priceFoundSuccess'));
             return;
+          } else if (priceResponse.success && priceResponse.best_per_language) {
+            // Handle the new multilingual response format
+            console.log('🌐 Processing multilingual results for', product.name);
+            console.log('📊 All language results:', priceResponse.best_per_language);
+            
+            let bestOverallPrice = Number.MAX_SAFE_INTEGER;
+            let bestPriceData: any = null;
+            
+            // Find the cheapest price among all languages
+            for (const [language, priceData] of Object.entries(priceResponse.best_per_language)) {
+              console.log(`📊 Checking ${language}:`, priceData);
+              if (priceData && typeof priceData === 'object' && 'price' in priceData && 
+                  typeof priceData.price === 'number' && priceData.price < bestOverallPrice) {
+                bestOverallPrice = priceData.price;
+                bestPriceData = priceData;
+                console.log(`💰 New best in ${language}:`, priceData.price);
+              }
+            }
+            
+            if (bestPriceData) {
+              console.log('🏆 Best multilingual price selected:', bestPriceData);
+              
+              // Update the product with the found price
+              products[productIndex] = { 
+                ...product, 
+                foundMarketPrice: bestPriceData.price,
+                sourceUrl: bestPriceData.link,
+                sourceName: bestPriceData.shop,
+                isLoadingMarketPrice: false 
+              };
+              
+              // Ensure we're updating the complete data object
+              const updatedData = { 
+                ...viewingAnalysis.data, 
+                products: [...products] 
+              };
+              
+              // Log the update for debugging
+              console.log('✅ Updating product with multilingual price:', bestPriceData.price, 'for product:', product.name);
+              console.log('📋 Full bestPriceData object:', bestPriceData);
+              
+              onUpdateAnalysis(viewingAnalysis.id, { 
+                data: updatedData
+              });
+              
+              toast.success(t('tenderDetails.priceFoundSuccess'));
+              return;
+            } else {
+              console.log('⚠️ No valid prices found in multilingual results');
+            }
           } else if (priceResponse.error) {
-            console.error('Product price API error:', priceResponse.error);
+            console.error('❌ Product price API error for', product.name, ':', priceResponse.error);
+          } else {
+            console.log('ℹ️ Unexpected API response format for', product.name, ':', priceResponse);
           }
         } catch (apiError) {
-          console.log('Product price API failed, falling back to Serper search:', apiError);
+          console.log('⚠️ Product price API failed for', product.name, ', falling back to Serper search:', apiError);
         }
         
         // Fallback to the original Serper search method
+        console.log('🔄 Using fallback Serper search for', product.name);
         // Generate search query for the product
         const searchQuery = generateRobustSearchQuery(product);
+        console.log('🔎 Serper search query for', product.name, ':', searchQuery);
         const searchResults = await searchOnSerper(searchQuery);
+        console.log('📥 Serper results for', product.name, ':', searchResults);
         const topResults = (searchResults['uz'] || []).slice(0, 3);
+        console.log('🔝 Top Serper results for', product.name, ':', topResults);
         
         let foundPrice = 0;
         let sourceUrl: string | undefined = undefined;
@@ -262,15 +322,21 @@ export const TenderWorkspace: React.FC<TenderWorkspaceProps> = ({
         
         // Try to extract price from the top results
         if (topResults.length > 0) {
+          console.log('🔗 Extracting prices from top results for', product.name);
           const prices = await Promise.all(topResults.map(result => extractPriceFromUrl(product, result.link)));
+          console.log('💵 Extracted prices for', product.name, ':', prices);
           const validPrices = prices.filter(p => p > 0);
+          console.log('✅ Valid prices for', product.name, ':', validPrices);
           
           if (validPrices.length > 0) {
             foundPrice = Math.min(...validPrices);
             const bestPriceIndex = prices.indexOf(foundPrice);
+            console.log('💰 Best price from Serper for', product.name, ':', foundPrice, 'at index:', bestPriceIndex);
             if (bestPriceIndex !== -1) {
               sourceUrl = topResults[bestPriceIndex].link;
               sourceName = topResults[bestPriceIndex].title;
+              console.log('🔗 Source URL for', product.name, ':', sourceUrl);
+              console.log('🏷️ Source Name for', product.name, ':', sourceName);
             }
           }
         }
@@ -291,19 +357,22 @@ export const TenderWorkspace: React.FC<TenderWorkspaceProps> = ({
         };
         
         // Log the update for debugging
-        console.log('Updating product with fallback price:', foundPrice, 'for product:', product.name);
+        console.log('🔄 Updating product with fallback price for', product.name, ':', foundPrice);
         
         onUpdateAnalysis(viewingAnalysis.id, { 
           data: updatedData
         });
         
         if (foundPrice > 0) {
+          console.log('🎉 Price found via fallback method for', product.name, ':', foundPrice);
           toast.success(t('tenderDetails.priceFoundSuccess'));
         } else {
+          console.log('😞 No price found via fallback method for', product.name);
           toast.error(t('tenderDetails.priceNotFound'));
         }
       } else {
         // Handle image search (existing functionality)
+        console.log('🖼️ Image search triggered for', product.name, 'but not implemented');
         toast.error(t('tenderDetails.imageSearchNotImplemented'));
         products[productIndex] = { ...product, isLoadingMarketPrice: false };
         
@@ -318,7 +387,7 @@ export const TenderWorkspace: React.FC<TenderWorkspaceProps> = ({
         });
       }
     } catch (error) {
-      console.error('Failed to find price:', error);
+      console.error('💥 Failed to find price for product index', productIndex, ':', error);
       const products = [...viewingAnalysis.data.products];
       products[productIndex] = { ...products[productIndex], isLoadingMarketPrice: false };
       
