@@ -54,6 +54,8 @@ export interface SerperSearchResult {
     position: number;
     foundPrice?: number;
     isLoadingPrice?: boolean;
+    priceSource?: string;
+    priceCurrency?: string;
 }
 
 export interface ExpenseTemplate {

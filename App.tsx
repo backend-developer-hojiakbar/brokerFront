@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, createContext, useContext, useMemo } from 'react';
 import { Toaster, toast } from 'react-hot-toast';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Sidebar } from './components/Sidebar';
 import { useSettings } from './hooks/useSettings';
@@ -15,7 +15,7 @@ import { searchOnSerper, extractPriceFromUrl } from './services/geminiService';
 // Fix: Import the Header component to resolve the reference error.
 import { Header } from './components/Header';
 // Import the new API service
-import { authApi, setAuthToken, userApi, tenderAnalysisApi, tokenApi, statisticsApi } from './services/apiService';
+import { authApi, setAuthToken, userApi, tenderAnalysisApi, tokenApi, statisticsApi, productPriceApi } from './services/apiService';
 // Import the BuyTokensModal component
 import { BuyTokensModal } from './components/BuyTokensModal';
 // Import the AdminPanel component
@@ -269,6 +269,11 @@ export const App: React.FC = () => {
   const [isNoTokensModalOpen, setIsNoTokensModalOpen] = useState(false);
   const [noTokensPlatform, setNoTokensPlatform] = useState<'XT-Xarid' | 'Tender-UZEX'>('XT-Xarid');
   const [quickSearchState, setQuickSearchState] = useState<{ query: string; results: Record<string, SerperSearchResult[]>; isLoading: boolean; error: string | null; hasSearched: boolean }>({ query: '', results: {}, isLoading: false, error: null, hasSearched: false });
+  
+  // State for price details modal
+  const [priceDetailsModalOpen, setPriceDetailsModalOpen] = useState(false);
+  const [priceDetailsData, setPriceDetailsData] = useState<any>(null);
+  const [currentProductIndex, setCurrentProductIndex] = useState<number | null>(null);
 
   // Init users on first load - now we'll fetch from backend
   useEffect(() => {
@@ -442,23 +447,91 @@ export const App: React.FC = () => {
           const initialResults = searchResultsData['uz']?.slice(0, 5).map(r => ({ ...r, isLoadingPrice: true })) || [];
           setQuickSearchState(prev => ({ ...prev, results: { 'uz': initialResults }, isLoading: false }));
 
+          // For each search result, try to get detailed price information using the product price API
           const pricePromises = initialResults.map(async (result) => {
               try {
-                  const price = await extractPriceFromUrl({ name: query } as Product, result.link);
-                  return { link: result.link, price };
+                  // Create a product object with the search query and result information
+                  const product = {
+                      name: query,
+                      description: result.snippet || '',
+                      specifications: [],
+                      quantity: '1'
+                  };
+                  
+                  // Try to get detailed price using the enhanced product price API
+                  const priceResponse = await productPriceApi.getPrice(product);
+                  
+                  if (priceResponse.success && priceResponse.best_price_overall) {
+                      // Use the best price from the enhanced search
+                      return { 
+                          link: result.link, 
+                          price: priceResponse.best_price_overall.price,
+                          source: priceResponse.best_price_overall.shop,
+                          currency: priceResponse.best_price_overall.currency
+                      };
+                  } else if (priceResponse.success && priceResponse.best_per_language) {
+                      // Find the best price among all languages
+                      let bestPrice = Infinity;
+                      let bestPriceData = null;
+                      
+                      for (const [lang, priceData] of Object.entries(priceResponse.best_per_language)) {
+                          if (priceData && typeof priceData === 'object' && 'price' in priceData) {
+                              const priceValue = priceData.price;
+                              if (typeof priceValue === 'number' && priceValue < bestPrice) {
+                                  bestPrice = priceValue;
+                                  bestPriceData = priceData;
+                              }
+                          }
+                      }
+                      
+                      if (bestPriceData) {
+                          return { 
+                              link: result.link, 
+                              price: bestPriceData.price,
+                              source: bestPriceData.shop,
+                              currency: bestPriceData.currency
+                          };
+                      }
+                  }
+                  
+                  // Fallback to the original price extraction method
+                  const fallbackPrice = await extractPriceFromUrl({ name: query } as Product, result.link);
+                  return { 
+                      link: result.link, 
+                      price: fallbackPrice,
+                      source: 'Fallback extraction',
+                      currency: 'UZS'
+                  };
               } catch {
-                  return { link: result.link, price: 0 };
+                  // If the enhanced search fails, try the original method
+                  try {
+                      const fallbackPrice = await extractPriceFromUrl({ name: query } as Product, result.link);
+                      return { 
+                          link: result.link, 
+                          price: fallbackPrice,
+                          source: 'Fallback extraction',
+                          currency: 'UZS'
+                      };
+                  } catch {
+                      return { link: result.link, price: 0, source: 'N/A', currency: 'UZS' };
+                  }
               }
           });
           
-          const prices = await Promise.all(pricePromises);
+          const priceResults = await Promise.all(pricePromises);
 
           setQuickSearchState(prev => ({
               ...prev,
               results: {
                   'uz': (prev.results['uz'] || []).map(r => {
-                      const found = prices.find(p => p.link === r.link);
-                      return { ...r, foundPrice: found?.price, isLoadingPrice: false };
+                      const found = priceResults.find(p => p.link === r.link);
+                      return { 
+                          ...r, 
+                          foundPrice: found?.price, 
+                          isLoadingPrice: false,
+                          priceSource: found?.source,
+                          priceCurrency: found?.currency
+                      };
                   })
               }
           }));
@@ -468,6 +541,44 @@ export const App: React.FC = () => {
       }
   };
 
+
+  // Handler for showing price details
+  const handleShowPriceDetails = async (product: Product) => {
+      try {
+          // Set loading state
+          setCurrentProductIndex(null); // For quick search, we don't track product index
+          
+          // Call the product price API to get detailed results
+          const priceResponse = await productPriceApi.getPrice(product);
+          
+          if (priceResponse.success) {
+              setPriceDetailsData(priceResponse);
+              setPriceDetailsModalOpen(true);
+          } else {
+              toast.error(t('priceSearch.detailsError'));
+          }
+      } catch (error) {
+          console.error('Error fetching price details:', error);
+          toast.error(t('priceSearch.detailsError'));
+      }
+  };
+
+  // Handler for selecting a price from the modal
+  const handleSelectPrice = (priceData: any) => {
+      // Close the modal first
+      setPriceDetailsModalOpen(false);
+      
+      // In the context of QuickSearch, we don't have a direct way to update the search result's price
+      // But we can show a success message
+      toast.success(t('priceSearch.priceSelected'));
+  };
+
+  // Handler for closing the price details modal
+  const handleClosePriceDetails = () => {
+      setPriceDetailsModalOpen(false);
+      setPriceDetailsData(null);
+      setCurrentProductIndex(null);
+  };
 
   const handleBuyTokens = () => {
       setIsBuyTokensModalOpen(true);
@@ -687,11 +798,21 @@ export const App: React.FC = () => {
             )}
             
             {page === 'search' && (
-              <QuickSearch 
-                state={quickSearchState}
-                onSearch={handleQuickSearch}
-                onReset={() => setQuickSearchState({ query: '', results: {}, isLoading: false, error: null, hasSearched: false })}
-              />
+              <>
+                <QuickSearch 
+                  state={quickSearchState}
+                  onSearch={handleQuickSearch}
+                  onReset={() => setQuickSearchState({ query: '', results: {}, isLoading: false, error: null, hasSearched: false })}
+                />
+                {quickSearchState.hasSearched && (
+                  <SearchResults 
+                    results={quickSearchState.results}
+                    isLoading={quickSearchState.isLoading}
+                    error={quickSearchState.error}
+                    onShowPriceDetails={(product) => handleShowPriceDetails(product)}
+                  />
+                )}
+              </>
             )}
             
             {page === 'users' && (
@@ -712,6 +833,127 @@ export const App: React.FC = () => {
                   setUsers(users.map(u => u.id === user.id ? updatedUser : u));
                 }
               }} />
+            )}
+            
+            {/* Price Details Modal */}
+            {priceDetailsModalOpen && priceDetailsData && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+                  <div className="p-6">
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-xl font-bold text-textDark">{t('priceSearch.priceDetailsTitle')}</h3>
+                      <button 
+                        onClick={handleClosePriceDetails}
+                        className="text-gray-500 hover:text-gray-700 text-2xl"
+                      >
+                        &times;
+                      </button>
+                    </div>
+                    
+                    <div className="space-y-6">
+                      {/* Language-specific results */}
+                      {priceDetailsData.best_per_language && (
+                        <div>
+                          <h4 className="font-bold text-lg text-textDark mb-3">{t('priceSearch.foundPrices')}</h4>
+                          <div className="space-y-3">
+                            {Object.entries(priceDetailsData.best_per_language).map(([lang, priceData]: [string, any]) => (
+                              <div key={lang} className="p-3 border border-gray-200 rounded-lg">
+                                <div className="font-semibold text-textDark">{lang === 'russian' ? 'Ruscha' : lang === 'original' ? t('priceSearch.originalLanguage') : lang}</div>
+                                {priceData && priceData.price ? (
+                                  <div className="mt-2">
+                                    <div className="text-green-700 font-bold text-lg">
+                                      {new Intl.NumberFormat('uz-UZ', { style: 'currency', currency: priceData.currency || 'UZS' }).format(priceData.price)}
+                                    </div>
+                                    {priceData.shop && <div className="text-sm text-textLight">{t('priceSearch.shop')}: {priceData.shop}</div>}
+                                    {priceData.url && (
+                                      <a href={priceData.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm">
+                                        {t('priceSearch.viewProduct')}
+                                      </a>
+                                    )}
+                                    <button 
+                                      onClick={() => handleSelectPrice(priceData)}
+                                      className="mt-2 px-3 py-1 bg-primary text-white text-sm rounded hover:bg-primary-dark"
+                                    >
+                                      {t('priceSearch.selectPrice')}
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="text-red-500">{t('priceSearch.priceNotFound')}</div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* All results */}
+                      {priceDetailsData.all_results && (
+                        <div>
+                          <h4 className="font-bold text-lg text-textDark mb-3">{t('priceSearch.allResults')}</h4>
+                          <div className="space-y-3">
+                            {Object.entries(priceDetailsData.all_results).map(([lang, results]: [string, any[]]) => (
+                              <div key={lang} className="border border-gray-200 rounded-lg p-3">
+                                <div className="font-semibold text-textDark mb-2">
+                                  {lang === 'russian' ? 'Ruscha' : lang === 'original' ? t('priceSearch.originalLanguage') : lang}
+                                </div>
+                                <div className="space-y-2">
+                                  {results && results.length > 0 ? (
+                                    results.map((result: any, index: number) => (
+                                      <div key={index} className="p-2 border-b border-gray-100 last:border-0">
+                                        <div className="text-green-700 font-bold">
+                                          {new Intl.NumberFormat('uz-UZ', { style: 'currency', currency: result.currency || 'UZS' }).format(result.price)}
+                                        </div>
+                                        {result.shop && <div className="text-sm text-textLight">{t('priceSearch.shop')}: {result.shop}</div>}
+                                        {result.url && (
+                                          <a href={result.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm">
+                                            {t('priceSearch.viewProduct')}
+                                          </a>
+                                        )}
+                                        <button 
+                                          onClick={() => handleSelectPrice(result)}
+                                          className="mt-1 px-2 py-1 bg-primary text-white text-xs rounded hover:bg-primary-dark"
+                                        >
+                                          {t('priceSearch.selectPrice')}
+                                        </button>
+                                      </div>
+                                    ))
+                                  ) : (
+                                    <div className="text-gray-500 text-sm">{t('priceSearch.noResults')}</div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Overall best price */}
+                      {priceDetailsData.best_price_overall && (
+                        <div className="border-2 border-primary rounded-lg p-4 bg-primary/5">
+                          <h4 className="font-bold text-lg text-textDark mb-2">{t('priceSearch.bestOverall')}</h4>
+                          <div className="text-green-700 font-bold text-xl">
+                            {new Intl.NumberFormat('uz-UZ', { style: 'currency', currency: priceDetailsData.best_price_overall.currency || 'UZS' }).format(priceDetailsData.best_price_overall.price)}
+                          </div>
+                          {priceDetailsData.best_price_overall.shop && (
+                            <div className="text-textDark">{t('priceSearch.shop')}: {priceDetailsData.best_price_overall.shop}</div>
+                          )}
+                          {priceDetailsData.best_price_overall.url && (
+                            <a href={priceDetailsData.best_price_overall.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                              {t('priceSearch.viewProduct')}
+                            </a>
+                          )}
+                          <button 
+                            onClick={() => handleSelectPrice(priceDetailsData.best_price_overall)}
+                            className="mt-2 px-4 py-2 bg-primary text-white font-bold rounded-lg hover:bg-primary-dark"
+                          >
+                            {t('priceSearch.selectBestPrice')}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
             )}
           </main>
         </div>
